@@ -17,6 +17,7 @@ AWS Modern Datalake is created and maintained by [Bráulio Figueiredo](https://b
 ## Table of Contents
 
 - [Technologies](#technologies)
+- [Architectural Model](#architectural-model)
 - [AWS CloudFormation](#aws-cloudformation)
 - [Docker](#docker)
 - [SIH DATASUS DBC file structure](#sih-datasus-dbc-file-structure)
@@ -28,6 +29,12 @@ AWS Modern Datalake is created and maintained by [Bráulio Figueiredo](https://b
 - Amazon AWS CDK
 - Python 3.10+
 - Maven 3.8+
+
+## Architectural Model
+
+![Architecture diagram](./docs/images/architectural-model.png)
+
+*Figure: High-level architecture of the AWS Modern Datalake (data ingestion, storage layers, and analytics).*
 
 ## AWS CloudFormation
 
