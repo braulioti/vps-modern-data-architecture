@@ -2,6 +2,10 @@
 SIH (Sistema de Informações Hospitalares) service for DATASUS FTP.
 """
 
+import urllib.request
+from pathlib import Path
+from urllib.parse import urlparse
+
 from dtos import DatasusSIHDTO
 
 from services.datasus_service import DatasusService
@@ -75,7 +79,19 @@ class DatasusSIHService(DatasusService):
         return uris
 
     def download(self) -> None:
-        """Download SIH data from the DATASUS FTP."""
+        """Download SIH data from the DATASUS FTP. Skips files that already exist in the download folder."""
+        if not self.download_folder:
+            return
+        folder = Path(self.download_folder)
+        folder.mkdir(parents=True, exist_ok=True)
         uris = self._build_datasus_uris()
         for uri in uris:
-            print(uri)
+            filename = Path(urlparse(uri).path).name
+            local_path = folder / filename
+            if local_path.exists():
+                continue
+            try:
+                urllib.request.urlretrieve(uri, str(local_path))
+                print(f"Downloading {filename}... [OK]")
+            except OSError:
+                print(f"Downloading {filename}... [ERROR]")
