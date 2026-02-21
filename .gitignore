@@ -6,5 +6,10 @@ venv
 ### Docker ###
 tmp
 
+### CloudFormation Java Project ###
+aws-infrastructure/target
+.cdk.staging
+cdk.out
+
 ### IDE ###
 .idea

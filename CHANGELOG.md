@@ -14,3 +14,4 @@ All notable changes to this project will be documented in this file.
 - Created file download structure for SIH DATASUS files (skip existing files, download to temp folder, print status [OK]/[ERROR]).
 - Created converters: DBCConverter (DBC to DBF) and DBFConverter (DBF to CSV); integrated into main pipeline with temp paths from env.
 - Added Docker support: Dockerfile, docker-compose, env precedence over .env, default config values, unbuffered logs.
+- Created ECR repository (sih-sus-repo) on AWS via CloudFormation using CDK stack DatalakeInfrastructureStack.
