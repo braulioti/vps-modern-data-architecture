@@ -22,6 +22,7 @@ import software.amazon.awscdk.services.s3.Bucket;
 public class DatalakeInfrastructureStack extends Stack {
 
     private final Vpc vpc;
+    private final Bucket bucket;
 
     private static final String VPC_NAME = "datalake-vpc";
     private static final String BUCKET_NAME = "braulioti-datalake-bucket";
@@ -48,7 +49,7 @@ public class DatalakeInfrastructureStack extends Stack {
                 .vpcName(VPC_NAME)
                 .build();
 
-        Bucket bucket = Bucket.Builder.create(this, "DatalakeBucketSih")
+        this.bucket = Bucket.Builder.create(this, "DatalakeBucketSih")
                 .bucketName(BUCKET_NAME)
                 .build();
 
@@ -89,5 +90,9 @@ public class DatalakeInfrastructureStack extends Stack {
 
     public Vpc getVpc() {
         return vpc;
+    }
+
+    public Bucket getBucket() {
+        return bucket;
     }
 }

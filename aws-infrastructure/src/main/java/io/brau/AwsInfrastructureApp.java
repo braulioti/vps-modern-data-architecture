@@ -24,6 +24,7 @@ public class AwsInfrastructureApp {
         SIHRepositoryStack repoStack = new SIHRepositoryStack(app, "SIHRepositoryStack", stackProps);
         DatalakeInfrastructureStack datalakeStack = new DatalakeInfrastructureStack(app, "DatalakeInfrastructureStack", stackProps, repoStack.getRepository());
         new DatabaseStack(app, "DatabaseStack", stackProps, datalakeStack.getVpc());
+        new ETLGlueStack(app, "ETLGlueStack", stackProps, datalakeStack.getBucket());
 
         app.synth();
     }
