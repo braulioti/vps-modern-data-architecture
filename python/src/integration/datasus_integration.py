@@ -3,41 +3,62 @@ DATASUS integration for FTP access and SIH (and future) services used by the pip
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from cnv_schemas.cnv_schema import CNVSchema
+    from config import EnvLoader
     from dtos import DatasusSIHDTO
 
-from pathlib import Path
-
-from cnv_schemas import CNVCitySchema
+from cnv_schemas import CNVMunicipioSchema, CNVUFSchema
 from converter import CNVConverter, DBCConverter, DBFConverter, ZipConverter
 from services.datasus import DatasusIBGEService, DatasusSIHService
 
+from integration.aws_integration import AWSIntegration
+
+# S3 prefix for SIH CSV (used to build ignore_files_sih from existing objects)
+S3_RAW_SIH_PREFIX = "raw/sih/"
 # CNV municip file path relative to extract folder; output filename
 CNV_MUNICIP_REL_PATH = "CNV/br_municip.cnv"
 MUNICIPIOS_CSV_FILENAME = "MUNICIPIOS.CSV"
+CNV_UF_REL_PATH = "CNV/br_uf.cnv"
+UF_CSV_FILENAME = "UF.CSV"
 
 
 class DatasusIntegration:
     """
     Centralizes DATASUS FTP URL and creation of DATASUS services (e.g. SIH download).
+    When built with EnvLoader, process_datasus() reads all paths and options from it.
     """
 
-    def __init__(self, ftp_url: str = "") -> None:
+    def __init__(self, loader: "EnvLoader") -> None:
         """
-        Initialize DATASUS integration.
+        Initialize DATASUS integration with EnvLoader (paths and options read from it in process_datasus).
 
         Args:
-            ftp_url: Base URL of the DATASUS FTP (e.g. ftp://ftp.datasus.gov.br).
+            loader: EnvLoader instance (after load()); used by process_datasus() for all paths and flags.
         """
-        self._ftp_url = (ftp_url or "").strip().rstrip("/")
+        self._loader = loader
+        self._ftp_url = (loader.ftp_datasus or "").strip().rstrip("/")
 
     @property
     def ftp_url(self) -> str:
         """DATASUS FTP base URL."""
         return self._ftp_url
+
+    def _ignore_files_sih_from_s3(self) -> list[str]:
+        """List CSV keys in S3 (raw/sih/), return corresponding .dbc names to skip on download."""
+        bucket = self._loader.aws_s3_bucket
+        if not bucket:
+            return []
+        aws = AWSIntegration()
+        keys = aws.list_s3_bucket(bucket, prefix=S3_RAW_SIH_PREFIX)
+        return [
+            Path(k).with_suffix(".dbc").name
+            for k in keys
+            if Path(k).name.endswith(".csv")
+        ]
 
     def create_sih_service(
         self,
@@ -86,15 +107,17 @@ class DatasusIntegration:
         self,
         temp_zip_folder: str | None = None,
         temp_zip_extract_folder: str | None = None,
-        csv_ibge_folder: str | None = None,
+        csv_ibge_municipios_folder: str | None = None,
+        csv_ibge_uf_folder: str | None = None,
     ) -> None:
         """
-        Run IBGE pipeline: download TAB_POP.zip, extract ZIPs, convert br_municip.cnv to MUNICIPIOS.CSV.
+        Run IBGE pipeline: download TAB_POP.zip, extract ZIPs, convert br_municip.cnv to MUNICIPIOS.CSV and br_uf.cnv to UF.CSV.
 
         Args:
             temp_zip_folder: Folder where IBGE ZIP (TAB_POP.zip) is downloaded.
             temp_zip_extract_folder: Destination folder for extracted ZIP contents.
-            csv_ibge_folder: Folder where MUNICIPIOS.CSV will be written.
+            csv_ibge_municipios_folder: Folder where MUNICIPIOS.CSV will be written.
+            csv_ibge_uf_folder: Folder where UF.CSV will be written.
         """
         if temp_zip_folder:
             ibge_service = DatasusIBGEService(
@@ -109,20 +132,34 @@ class DatasusIntegration:
                     ZipConverter.extract(zip_path, temp_zip_extract_folder)
                 except (FileNotFoundError, Exception):
                     pass
-        if temp_zip_extract_folder and csv_ibge_folder:
+        if temp_zip_extract_folder and csv_ibge_municipios_folder:
             cnv_municip_path = Path(temp_zip_extract_folder) / CNV_MUNICIP_REL_PATH
-            municipios_csv_path = Path(csv_ibge_folder) / MUNICIPIOS_CSV_FILENAME
+            municipios_csv_path = Path(csv_ibge_municipios_folder) / MUNICIPIOS_CSV_FILENAME
             if cnv_municip_path.is_file():
                 try:
-                    Path(csv_ibge_folder).mkdir(parents=True, exist_ok=True)
+                    Path(csv_ibge_municipios_folder).mkdir(parents=True, exist_ok=True)
                     CNVConverter.to_csv(
                         cnv_municip_path,
                         municipios_csv_path,
-                        CNVCitySchema(),
+                        CNVMunicipioSchema(),
                         encoding="latin-1",
                     )
                 except (FileNotFoundError, Exception) as e:
                     print(f"Error converting {cnv_municip_path.name} to {MUNICIPIOS_CSV_FILENAME}: {e}")
+        if temp_zip_extract_folder and csv_ibge_uf_folder:
+            cnv_uf_path = Path(temp_zip_extract_folder) / CNV_UF_REL_PATH
+            uf_csv_path = Path(csv_ibge_uf_folder) / UF_CSV_FILENAME
+            if cnv_uf_path.is_file():
+                try:
+                    Path(csv_ibge_uf_folder).mkdir(parents=True, exist_ok=True)
+                    CNVConverter.to_csv(
+                        cnv_uf_path,
+                        uf_csv_path,
+                        CNVUFSchema(),
+                        encoding="latin-1",
+                    )
+                except (FileNotFoundError, Exception) as e:
+                    print(f"Error converting {cnv_uf_path.name} to {UF_CSV_FILENAME}: {e}")
 
     def convert_cnv_files(
         self,
@@ -158,36 +195,39 @@ class DatasusIntegration:
                 print(f"Error converting {cnv_path.name}: {e}")
         return result
 
-    def process_datasus(
-        self,
-        params: "DatasusSIHDTO",
-        download_folder: str | None = None,
-        ignore_files_sih: list[str] | None = None,
-        temp_dbf_path: str | None = None,
-        temp_csv_path: str | None = None,
-        temp_zip_folder: str | None = None,
-        temp_zip_extract_folder: str | None = None,
-        csv_ibge_folder: str | None = None,
-    ) -> None:
+    def process_datasus(self) -> None:
         """
-        Run SIH download and converters (DBC -> DBF -> CSV), then process_ibge (download, extract, CNV -> MUNICIPIOS.CSV).
+        Run SIH download and converters (DBC -> DBF -> CSV), then process_ibge (download, extract, CNV -> MUNICIPIOS.CSV and UF.CSV).
+        Reads all paths and options from the EnvLoader passed in the constructor.
+        """
+        from dtos import DatasusSIHDTO
 
-        Args:
-            params: SIH parameters (period and state filters).
-            download_folder: Local folder where DBC files will be downloaded.
-            ignore_files_sih: List of file names to skip for SIH (e.g. already in S3).
-            temp_dbf_path: Folder for DBF output (optional; if set with temp_csv_path, SIH converters run).
-            temp_csv_path: Folder for CSV output (optional; if set with temp_dbf_path, SIH converters run).
-            temp_zip_folder: Folder for IBGE ZIP files (optional; passed to process_ibge).
-            temp_zip_extract_folder: Destination for extracted ZIP contents (optional; passed to process_ibge).
-            csv_ibge_folder: Folder for IBGE CSV output e.g. MUNICIPIOS.CSV (optional; passed to process_ibge).
-        """
-        service = self.create_sih_service(params, download_folder, ignore_files_sih or [])
+        loader = self._loader
+        if not loader.ftp_datasus:
+            return
+        params = DatasusSIHDTO(
+            start_year=loader.start_year,
+            start_month=loader.start_month,
+            end_year=loader.end_year,
+            end_month=loader.end_month,
+            states=loader.states,
+        )
+        ignore_files_sih = self._ignore_files_sih_from_s3()
+        service = self.create_sih_service(
+            params,
+            download_folder=loader.temp_dbc_path,
+            ignore_files_sih=ignore_files_sih,
+        )
         service.download()
-        if download_folder and temp_dbf_path and temp_csv_path:
-            self.run_converters(download_folder, temp_dbf_path, temp_csv_path)
+        if loader.temp_dbc_path and loader.temp_dbf_path and loader.temp_csv_path:
+            self.run_converters(
+                loader.temp_dbc_path,
+                loader.temp_dbf_path,
+                loader.temp_csv_path,
+            )
         self.process_ibge(
-            temp_zip_folder=temp_zip_folder,
-            temp_zip_extract_folder=temp_zip_extract_folder,
-            csv_ibge_folder=csv_ibge_folder,
+            temp_zip_folder=loader.temp_zip_folder if loader.process_ibge else None,
+            temp_zip_extract_folder=loader.temp_zip_extract_folder if loader.process_ibge else None,
+            csv_ibge_municipios_folder=loader.csv_ibge_municipios_folder if loader.process_ibge else None,
+            csv_ibge_uf_folder=loader.csv_ibge_uf_folder if loader.process_ibge else None,
         )

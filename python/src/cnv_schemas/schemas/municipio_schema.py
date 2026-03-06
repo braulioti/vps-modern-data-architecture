@@ -1,13 +1,13 @@
 """
-City CNV schema: id, cod_ibge, municipio (fixed-width layout).
+Municipality CNV schema: id, cod_ibge, municipio (fixed-width layout).
 """
 
 from cnv_schemas.cnv_schema import CNVField, CNVSchema
 
 
-class CNVCitySchema(CNVSchema):
+class CNVMunicipioSchema(CNVSchema):
     """
-    CNV schema for city/municipality data: id, cod_ibge, municipio.
+    CNV schema for municipality data: id, cod_ibge, municipio.
     """
 
     def __init__(self) -> None:

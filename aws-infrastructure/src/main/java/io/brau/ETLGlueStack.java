@@ -24,12 +24,15 @@ public class ETLGlueStack extends Stack {
     private static final String GLUE_DATABASE_NAME = "datalake_csv";
     private static final String CRAWLER_NAME = "sih-sus-csv-crawler";
     private static final String MUNICIPIOS_CRAWLER_NAME = "municipios-csv-crawler";
+    private static final String UF_CRAWLER_NAME = "uf-csv-crawler";
     private static final String CRAWLER_ROLE_NAME = "datalake-glue-crawler-role";
     private static final String CSV_CLASSIFIER_NAME = "csv-comma";
     /** S3 prefix where SIH CSV files are stored. */
     private static final String CSV_S3_PREFIX = "raw/sih/";
-    /** S3 prefix where IBGE CSV files are stored (e.g. MUNICIPIOS.CSV). */
-    private static final String CSV_IBGE_S3_PREFIX = "raw/ibge/";
+    /** S3 prefix where IBGE municipalities CSV files are stored (e.g. MUNICIPIOS.CSV). */
+    private static final String CSV_IBGE_MUNICIPIOS_PREFIX = "raw/ibge-municipios/";
+    /** S3 prefix where IBGE UF CSV files are stored (e.g. UF.CSV). */
+    private static final String CSV_IBGE_UF_PREFIX = "raw/ibge-uf/";
 
     public ETLGlueStack(final Construct scope, final String id, final IBucket dataLakeBucket) {
         this(scope, id, null, dataLakeBucket);
@@ -99,8 +102,8 @@ public class ETLGlueStack extends Stack {
                         .build())
                 .build();
 
-        // Crawler that reads IBGE CSV files (e.g. MUNICIPIOS.CSV) from S3 into the same datalake_csv database
-        String s3PathIbge = "s3://" + dataLakeBucket.getBucketName() + "/" + CSV_IBGE_S3_PREFIX;
+        // Crawler that reads IBGE municipalities CSV files (e.g. MUNICIPIOS.CSV) from S3 into the same datalake_csv database
+        String s3PathMunicipios = "s3://" + dataLakeBucket.getBucketName() + "/" + CSV_IBGE_MUNICIPIOS_PREFIX;
         CfnCrawler.Builder.create(this, "MunicipiosCsvCrawler")
                 .name(MUNICIPIOS_CRAWLER_NAME)
                 .role(crawlerRole.getRoleArn())
@@ -108,7 +111,21 @@ public class ETLGlueStack extends Stack {
                 .classifiers(List.of(CSV_CLASSIFIER_NAME))
                 .targets(CfnCrawler.TargetsProperty.builder()
                         .s3Targets(List.of(CfnCrawler.S3TargetProperty.builder()
-                                .path(s3PathIbge)
+                                .path(s3PathMunicipios)
+                                .build()))
+                        .build())
+                .build();
+
+        // Crawler that reads IBGE UF CSV files (e.g. UF.CSV) from S3 into the same datalake_csv database
+        String s3PathUf = "s3://" + dataLakeBucket.getBucketName() + "/" + CSV_IBGE_UF_PREFIX;
+        CfnCrawler.Builder.create(this, "UfCsvCrawler")
+                .name(UF_CRAWLER_NAME)
+                .role(crawlerRole.getRoleArn())
+                .databaseName(GLUE_DATABASE_NAME)
+                .classifiers(List.of(CSV_CLASSIFIER_NAME))
+                .targets(CfnCrawler.TargetsProperty.builder()
+                        .s3Targets(List.of(CfnCrawler.S3TargetProperty.builder()
+                                .path(s3PathUf)
                                 .build()))
                         .build())
                 .build();

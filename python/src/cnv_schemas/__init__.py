@@ -1,6 +1,6 @@
 """CNV schemas package."""
 
 from cnv_schemas.cnv_schema import CNVField, CNVSchema
-from cnv_schemas.schemas import CNVCitySchema
+from cnv_schemas.schemas import CNVMunicipioSchema, CNVUFSchema
 
-__all__ = ["CNVField", "CNVSchema", "CNVCitySchema"]
+__all__ = ["CNVField", "CNVSchema", "CNVMunicipioSchema", "CNVUFSchema"]

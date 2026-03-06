@@ -1,5 +1,6 @@
 """Predefined CNV schemas."""
 
-from .city_schema import CNVCitySchema
+from .municipio_schema import CNVMunicipioSchema
+from .uf_schema import CNVUFSchema
 
-__all__ = ["CNVCitySchema"]
+__all__ = ["CNVMunicipioSchema", "CNVUFSchema"]
