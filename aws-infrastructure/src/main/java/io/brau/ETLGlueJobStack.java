@@ -92,6 +92,7 @@ public class ETLGlueJobStack extends Stack {
         dataLakeBucket.grantRead(jobRole);
         String catalogArn = "arn:aws:glue:" + getRegion() + ":" + getAccount() + ":catalog";
         String databaseArn = "arn:aws:glue:" + getRegion() + ":" + getAccount() + ":database/" + GLUE_DATABASE_NAME;
+        String databaseDefaultArn = "arn:aws:glue:" + getRegion() + ":" + getAccount() + ":database/default";
         String tableArn = "arn:aws:glue:" + getRegion() + ":" + getAccount() + ":table/" + GLUE_DATABASE_NAME + "/*";
         jobRole.addToPrincipalPolicy(PolicyStatement.Builder.create()
                 .effect(Effect.ALLOW)
@@ -99,7 +100,13 @@ public class ETLGlueJobStack extends Stack {
                         "glue:GetTable", "glue:GetTables",
                         "glue:GetDatabase", "glue:GetDatabases",
                         "glue:GetPartition", "glue:GetPartitions"))
-                .resources(List.of(catalogArn, databaseArn, tableArn))
+                .resources(List.of(catalogArn, databaseArn, databaseDefaultArn, tableArn))
+                .build());
+        // CreateDatabase required when --enable-glue-datacatalog: Spark may create the "default" database
+        jobRole.addToPrincipalPolicy(PolicyStatement.Builder.create()
+                .effect(Effect.ALLOW)
+                .actions(List.of("glue:CreateDatabase"))
+                .resources(List.of(catalogArn, databaseDefaultArn))
                 .build());
         jobRole.addToPrincipalPolicy(PolicyStatement.Builder.create()
                 .effect(Effect.ALLOW)
@@ -144,7 +151,7 @@ public class ETLGlueJobStack extends Stack {
         scriptAsset.grantRead(jobRole);
         String scriptLocation = "s3://" + scriptAsset.getS3BucketName() + "/" + scriptAsset.getS3ObjectKey();
 
-        // Glue ETL job (SIH)
+        // Glue ETL job (SIH). Catalog schema comes only from sih-columns.json (CfnTable in ETLGlueStack).
         CfnJob.Builder.create(this, "SihToRdsJob")
                 .name(SIH_SUS_JOB_NAME)
                 .role(jobRole.getRoleArn())
@@ -155,6 +162,7 @@ public class ETLGlueJobStack extends Stack {
                         .build())
                 .defaultArguments(Map.of(
                         "--job-bookmark-option", "job-bookmark-disable",
+                        "--enable-glue-datacatalog", "",
                         "--catalog_database", GLUE_DATABASE_NAME,
                         "--catalog_table", DEFAULT_SIH_CATALOG_TABLE,
                         "--jdbc_url", jdbcUrl,
@@ -186,6 +194,37 @@ public class ETLGlueJobStack extends Stack {
                         .build())
                 .defaultArguments(Map.of(
                         "--job-bookmark-option", "job-bookmark-disable",
+                        "--enable-glue-datacatalog", "",
+                        "--catalog_database", GLUE_DATABASE_NAME,
+                        "--jdbc_url", jdbcUrl,
+                        "--secret_arn", rdsDevSecretArn))
+                .connections(CfnJob.ConnectionsListProperty.builder()
+                        .connections(List.of(connectionName))
+                        .build())
+                .glueVersion("4.0")
+                .workerType("G.1X")
+                .numberOfWorkers(2)
+                .build();
+
+        // Script asset (glue-scripts/dimensions_aux_to_rds.py)
+        Asset dimensionsAuxScriptAsset = Asset.Builder.create(this, "DimensionsAuxToRdsScript")
+                .path("glue-scripts/dimensions_aux_to_rds.py")
+                .build();
+        dimensionsAuxScriptAsset.grantRead(jobRole);
+        String dimensionsAuxScriptLocation = "s3://" + dimensionsAuxScriptAsset.getS3BucketName() + "/" + dimensionsAuxScriptAsset.getS3ObjectKey();
+
+        // Glue ETL job (Dimensions aux - simpler dimension tables only)
+        CfnJob.Builder.create(this, "DimensionsAuxJob")
+                .name("dimensions_aux")
+                .role(jobRole.getRoleArn())
+                .command(CfnJob.JobCommandProperty.builder()
+                        .name("glueetl")
+                        .scriptLocation(dimensionsAuxScriptLocation)
+                        .pythonVersion("3")
+                        .build())
+                .defaultArguments(Map.of(
+                        "--job-bookmark-option", "job-bookmark-disable",
+                        "--enable-glue-datacatalog", "",
                         "--catalog_database", GLUE_DATABASE_NAME,
                         "--jdbc_url", jdbcUrl,
                         "--secret_arn", rdsDevSecretArn))

@@ -12,6 +12,8 @@ S3_RAW_IBGE_MUNICIPIOS_PREFIX = "raw/ibge-municipios/"
 S3_RAW_IBGE_UF_PREFIX = "raw/ibge-uf/"
 S3_RAW_SIGTAP_PREFIX = "raw/sigtap/"
 S3_RAW_CID10_PREFIX = "raw/cid10/"
+S3_RAW_NACIONAL_PREFIX = "raw/nacional/"
+SIH_GLUE_JOB_NAME = "sih-sus-job"
 
 
 def upload_csv_to_s3(
@@ -60,6 +62,13 @@ def main() -> None:
         datasus = DatasusIntegration(loader)
         datasus.process_datasus()
         upload_csv_to_s3(loader.temp_csv_path, loader.aws_s3_bucket)
+        status_list = datasus.get_status_download_sih()
+        if any(s.status == "success" for s in status_list):
+            aws = AWSIntegration()
+            run_id = aws.call_job_glue(SIH_GLUE_JOB_NAME)
+            print(f"Started Glue job {SIH_GLUE_JOB_NAME}, run id: {run_id}")
+        else:
+            print("No SIH download success; Glue job not started.")
         upload_csv_to_s3(
             loader.csv_ibge_sigtap_folder,
             loader.aws_s3_bucket,
@@ -69,6 +78,11 @@ def main() -> None:
             loader.csv_ibge_cid10_folder,
             loader.aws_s3_bucket,
             prefix=S3_RAW_CID10_PREFIX,
+        )
+        upload_csv_to_s3(
+            loader.csv_nacional_folder,
+            loader.aws_s3_bucket,
+            prefix=S3_RAW_NACIONAL_PREFIX,
         )
         upload_ibge_csv_to_s3(loader)
 

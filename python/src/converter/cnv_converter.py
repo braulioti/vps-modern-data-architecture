@@ -68,7 +68,7 @@ class CNVConverter:
         row: list[str] = []
         for field in fields:
             end = field.pos_start + field.size
-            raw = line[field.pos_start:end].rstrip()
+            raw = line[field.pos_start:end].rstrip().replace(",", " ")
             if field.type == "int":
                 if not raw.strip():
                     row.append("")

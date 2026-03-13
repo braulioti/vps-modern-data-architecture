@@ -65,6 +65,12 @@ cdk bootstrap
 cdk deploy DatalakeInfrastructureStack --context account=YOUR_ACCOUNT_ID --context region=us-east-1 --require-approval never
 ```
 
+**⚠️ If you see "Cannot delete export ... as it is in use" or DatalakeInfrastructureStack goes to UPDATE_ROLLBACK_COMPLETE:** Do **not** deploy DatalakeInfrastructureStack again until you have fixed the dependency. From `aws-infrastructure`, run the consuming stacks first (in order): **Step 1:** `cdk deploy DatabaseStack --require-approval never` — wait until it finishes. **Step 2:** `cdk deploy ETLGlueJobStack --require-approval never` — wait until it finishes. After both succeed, the VPC export is no longer in use; then you can run `cdk deploy DatalakeInfrastructureStack` (or delete it) without rollback. On Linux/Mac you can run `./deploy-stacks-release-vpc-export.sh` instead to do both steps.
+
+**Glue jobs need S3 access from the VPC:** Create an **S3 Gateway Endpoint** in the datalake VPC so Glue can reach S3 without NAT (one-time). In the AWS Console: **VPC** → **Endpoints** → **Create endpoint**. Under "Endpoint types", choose **AWS services**. In **Services**, search for **S3** and select the entry **com.amazonaws.*region*.s3** (e.g. `com.amazonaws.us-east-1.s3`) — that service is a Gateway endpoint (the type is set by the service, not a separate option). Select your datalake VPC and **all route tables** for that VPC, then create. This is not created by CDK to avoid changing the VPC stack and triggering rollbacks.
+
+To stop seeing a CDK notice: `cdk acknowledge <id>` (use the id shown in the notice, e.g. `cdk acknowledge 34892`).
+
 After deployment, the ECR repository `sih-sus-repo` is available in your account for pushing the Docker image (e.g. via GitHub Actions on tag push).
 
 ## Docker

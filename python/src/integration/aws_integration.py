@@ -46,6 +46,10 @@ class AWSIntegration:
         """S3 client for the current session and config."""
         return self.session.client("s3", config=self._config)
 
+    def glue_client(self):
+        """Glue client for the current session and config."""
+        return self.session.client("glue", config=self._config)
+
     def list_s3_bucket(self, bucket: str, prefix: str = "") -> list[str]:
         """
         List object keys (file names) in an S3 bucket.
@@ -107,3 +111,29 @@ class AWSIntegration:
             s3.upload_fileobj(body, bucket, key, **kwargs)
 
         return f"s3://{bucket}/{key}"
+
+    def call_job_glue(
+        self,
+        job_name: str,
+        arguments: dict[str, str] | None = None,
+    ) -> str:
+        """
+        Start an AWS Glue job run.
+
+        Args:
+            job_name: Name of the Glue job to run.
+            arguments: Optional job arguments (e.g. {"--job-bookmark-option": "job-bookmark-disable"}).
+                      Keys and values must be strings. Do not pass secrets in plaintext.
+
+        Returns:
+            The JobRunId of the started run (for tracking or get_job_run).
+
+        Raises:
+            ClientError: If the job does not exist or start fails.
+        """
+        glue = self.glue_client()
+        kwargs: dict = {"JobName": job_name}
+        if arguments:
+            kwargs["Arguments"] = {k: str(v) for k, v in arguments.items()}
+        response = glue.start_job_run(**kwargs)
+        return response["JobRunId"]

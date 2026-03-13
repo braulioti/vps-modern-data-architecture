@@ -6,8 +6,14 @@ import software.amazon.awscdk.StackProps;
 import java.util.HashMap;
 import java.util.Map;
 
+import software.amazon.awscdk.services.ec2.InterfaceVpcEndpointAwsService;
+import software.amazon.awscdk.services.ec2.InterfaceVpcEndpointOptions;
+import software.amazon.awscdk.services.ec2.SubnetConfiguration;
+import software.amazon.awscdk.services.ec2.SubnetSelection;
+import software.amazon.awscdk.services.ec2.SubnetType;
 import software.amazon.awscdk.services.ec2.Vpc;
 import software.amazon.awscdk.services.ecr.IRepository;
+import java.util.List;
 import software.amazon.awscdk.services.ecs.Cluster;
 import software.amazon.awscdk.services.iam.ServicePrincipal;
 import software.amazon.awscdk.services.ecs.ContainerDefinitionOptions;
@@ -45,11 +51,36 @@ public class DatalakeInfrastructureStack extends Stack {
     public DatalakeInfrastructureStack(final Construct scope, final String id, final StackProps props, final IRepository ecrRepository) {
         super(scope, id, props);
 
-        // natGateways(0) = no NAT cost; existing VPC may have Public + Isolated subnets (do not change VPC here to avoid rollback)
+        // natGateways(0) = no NAT cost. Use Public + Private (PRIVATE_WITH_EGRESS) so template matches existing deployed subnets (PrivateSubnet1/2/3); using Isolated would create new subnets and conflict with existing CIDRs.
         this.vpc = Vpc.Builder.create(this, "DatalakeVPC")
                 .vpcName(VPC_NAME)
                 .natGateways(0)
+                .subnetConfiguration(List.of(
+                        SubnetConfiguration.builder()
+                                .name("Public")
+                                .subnetType(SubnetType.PUBLIC)
+                                .cidrMask(19)
+                                .build(),
+                        SubnetConfiguration.builder()
+                                .name("Private")
+                                .subnetType(SubnetType.PRIVATE_WITH_EGRESS)
+                                .cidrMask(19)
+                                .build()))
                 .build();
+
+        // Secrets Manager interface endpoint so Glue (and other resources in VPC without NAT) can reach the API
+        this.vpc.addInterfaceEndpoint("SecretsManager", InterfaceVpcEndpointOptions.builder()
+                .service(InterfaceVpcEndpointAwsService.SECRETS_MANAGER)
+                .privateDnsEnabled(true)
+                .subnets(SubnetSelection.builder().subnetType(SubnetType.PUBLIC).build())
+                .build());
+
+        // Glue API interface endpoint so the Glue job in VPC can reach Data Catalog (glue.us-east-1.amazonaws.com) without NAT
+        this.vpc.addInterfaceEndpoint("Glue", InterfaceVpcEndpointOptions.builder()
+                .service(InterfaceVpcEndpointAwsService.GLUE)
+                .privateDnsEnabled(true)
+                .subnets(SubnetSelection.builder().subnetType(SubnetType.PUBLIC).build())
+                .build());
 
         this.bucket = Bucket.Builder.create(this, "DatalakeBucketSih")
                 .bucketName(BUCKET_NAME)

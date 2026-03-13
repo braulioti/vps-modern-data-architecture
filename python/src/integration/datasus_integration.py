@@ -9,9 +9,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from cnv_schemas.cnv_schema import CNVSchema
     from config import EnvLoader
-    from dtos import DatasusSIHDTO
+    from dtos import DatasusSIHDTO, FileDownloadStatusDTO
 
-from cnv_schemas import CNVMunicipioSchema, CNVUFSchema
+from cnv_schemas import CNVMunicipioSchema, CNVNacionalSchema, CNVUFSchema
 from converter import CNVConverter, DBCConverter, DBFConverter, ZipConverter
 from services.datasus import DatasusCIHService, DatasusIBGEService, DatasusSIHService
 
@@ -32,6 +32,9 @@ CNV_MUNICIP_REL_PATH = "CNV/br_municip.cnv"
 MUNICIPIOS_CSV_FILENAME = "MUNICIPIOS.CSV"
 CNV_UF_REL_PATH = "CNV/br_uf.cnv"
 UF_CSV_FILENAME = "UF.CSV"
+# CNV nacionalidade (extract/cnv/NACION3D.CNV) and output CSV name
+CNV_NACION_REL_PATH = "NACION3D.CNV"
+NACION_CSV_FILENAME = "NACION3D.CSV"
 
 
 class DatasusIntegration:
@@ -49,6 +52,7 @@ class DatasusIntegration:
         """
         self._loader = loader
         self._ftp_url = (loader.ftp_datasus or "").strip().rstrip("/")
+        self._sih_service: DatasusSIHService | None = None
 
     @property
     def ftp_url(self) -> str:
@@ -85,12 +89,25 @@ class DatasusIntegration:
         Returns:
             Configured DatasusSIHService instance (call .download() to run).
         """
-        return DatasusSIHService(
+        self._sih_service = DatasusSIHService(
             ftp_url=self._ftp_url,
             params=params,
             download_folder=download_folder,
             ignore_files=ignore_files_sih or [],
         )
+        return self._sih_service
+
+    def get_status_download_sih(self) -> list["FileDownloadStatusDTO"]:
+        """
+        Return the SIH download status list from the last SIH service used (create_sih_service + download).
+
+        Returns:
+            List of FileDownloadStatusDTO (filename + status: ignored, exists, success, error).
+            Empty list if no SIH download has been run yet.
+        """
+        if self._sih_service is None:
+            return []
+        return self._sih_service.download_status_list
 
     def run_converters(
         self,
@@ -167,15 +184,18 @@ class DatasusIntegration:
         temp_zip_extract_folder: str | None = None,
         csv_ibge_municipios_folder: str | None = None,
         csv_ibge_uf_folder: str | None = None,
+        csv_nacional_folder: str | None = None,
     ) -> None:
         """
-        Run IBGE pipeline: download TAB_POP.zip, extract ZIPs, convert br_municip.cnv to MUNICIPIOS.CSV and br_uf.cnv to UF.CSV.
+        Run IBGE pipeline: download TAB_POP.zip, extract ZIPs, convert br_municip.cnv to MUNICIPIOS.CSV,
+        br_uf.cnv to UF.CSV, and extract/cnv/NACION3D.CNV to NACION3D.CSV when present.
 
         Args:
             temp_zip_folder: Folder where IBGE ZIP (TAB_POP.zip) is downloaded.
-            temp_zip_extract_folder: Destination folder for extracted ZIP contents.
+            temp_zip_extract_folder: Destination folder for extracted ZIP contents (e.g. extract/).
             csv_ibge_municipios_folder: Folder where MUNICIPIOS.CSV will be written.
             csv_ibge_uf_folder: Folder where UF.CSV will be written.
+            csv_nacional_folder: Folder where NACION3D.CSV (nacionalidade) will be written.
         """
         if temp_zip_folder:
             ibge_service = DatasusIBGEService(
@@ -218,6 +238,20 @@ class DatasusIntegration:
                     )
                 except (FileNotFoundError, Exception) as e:
                     print(f"Error converting {cnv_uf_path.name} to {UF_CSV_FILENAME}: {e}")
+        if temp_zip_extract_folder and csv_nacional_folder:
+            cnv_nacion_path = Path(temp_zip_extract_folder) / CNV_NACION_REL_PATH
+            nacion_csv_path = Path(csv_nacional_folder) / NACION_CSV_FILENAME
+            if cnv_nacion_path.is_file():
+                try:
+                    Path(csv_nacional_folder).mkdir(parents=True, exist_ok=True)
+                    CNVConverter.to_csv(
+                        cnv_nacion_path,
+                        nacion_csv_path,
+                        CNVNacionalSchema(),
+                        encoding="latin-1",
+                    )
+                except (FileNotFoundError, Exception) as e:
+                    print(f"Error converting {cnv_nacion_path.name} to {NACION_CSV_FILENAME}: {e}")
 
     def convert_cnv_files(
         self,
@@ -295,4 +329,5 @@ class DatasusIntegration:
             temp_zip_extract_folder=loader.temp_zip_extract_folder if loader.process_ibge else None,
             csv_ibge_municipios_folder=loader.csv_ibge_municipios_folder if loader.process_ibge else None,
             csv_ibge_uf_folder=loader.csv_ibge_uf_folder if loader.process_ibge else None,
+            csv_nacional_folder=loader.csv_nacional_folder if loader.process_ibge else None,
         )
