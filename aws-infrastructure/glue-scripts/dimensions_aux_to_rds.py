@@ -1,11 +1,9 @@
 """
 Glue ETL job (dimensions_aux): create simpler dimension tables from Glue Data Catalog.
 Only creates and loads each table if it does not exist; adds the given primary key.
-Uses --catalog_database, --jdbc_url, --secret_arn.
+Uses --catalog_database, --jdbc_url, --db_user, --db_password.
 """
-import json
 import sys
-import boto3
 from awsglue.utils import getResolvedOptions
 from awsglue.context import GlueContext
 from awsglue.job import Job
@@ -15,26 +13,18 @@ from pyspark.sql import types as T
 
 args = getResolvedOptions(
     sys.argv,
-    ["JOB_NAME", "catalog_database", "jdbc_url", "secret_arn"],
+    ["JOB_NAME", "catalog_database", "jdbc_url", "db_user", "db_password"],
 )
 catalog_database = args["catalog_database"]
 jdbc_url = args["jdbc_url"]
-secret_arn = args["secret_arn"]
+user = args["db_user"]
+password = args["db_password"]
 
 sc = SparkContext()
 glueContext = GlueContext(sc)
 spark = glueContext.spark_session
 job = Job(glueContext)
 job.init(args["JOB_NAME"], args)
-
-client = boto3.client("secretsmanager")
-secret = client.get_secret_value(SecretId=secret_arn)
-secret_dict = json.loads(secret["SecretString"])
-user = secret_dict.get("username")
-password = secret_dict.get("password")
-if not user or not password:
-    raise ValueError("Secret missing username or password")
-
 
 def ensure_jdbc_safe(dataframe):
     cols = []

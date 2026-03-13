@@ -1,10 +1,15 @@
 ### Python Files ###
 python/tmp
+python/logs
 python/src/.env
+python/data
 venv
 
 ### Docker ###
+.env
 tmp
+logs
+data
 
 ### CloudFormation Java Project ###
 aws-infrastructure/target

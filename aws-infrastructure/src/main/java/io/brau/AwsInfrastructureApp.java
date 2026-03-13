@@ -23,12 +23,8 @@ public class AwsInfrastructureApp {
         StackProps stackProps = stackPropsBuilder.build();
         SIHRepositoryStack repoStack = new SIHRepositoryStack(app, "SIHRepositoryStack", stackProps);
         DatalakeInfrastructureStack datalakeStack = new DatalakeInfrastructureStack(app, "DatalakeInfrastructureStack", stackProps, repoStack.getRepository());
-        new DatabaseStack(app, "DatabaseStack", stackProps, datalakeStack.getVpc());
-        DatabasePublicStack databasePublicStack = new DatabasePublicStack(app, "DatabasePublicStack", stackProps, datalakeStack.getVpc());
         new ETLGlueStack(app, "ETLGlueStack", stackProps, datalakeStack.getBucket());
-        new ETLGlueJobStack(app, "ETLGlueJobStack", stackProps, datalakeStack.getBucket(),
-                datalakeStack.getVpc(), databasePublicStack.getInstance(), databasePublicStack.getSecretArn(),
-                databasePublicStack.getGlueSecurityGroup());
+        new ETLGlueJobStack(app, "ETLGlueJobStack", stackProps, datalakeStack.getBucket());
 
         app.synth();
     }

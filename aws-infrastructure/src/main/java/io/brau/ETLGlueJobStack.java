@@ -7,18 +7,11 @@ import software.constructs.Construct;
 import software.amazon.awscdk.Stack;
 import software.amazon.awscdk.StackProps;
 import software.amazon.awscdk.services.s3.assets.Asset;
-import software.amazon.awscdk.services.ec2.IVpc;
-import software.amazon.awscdk.services.ec2.ISecurityGroup;
-import software.amazon.awscdk.services.ec2.ISubnet;
-import software.amazon.awscdk.services.ec2.SubnetSelection;
-import software.amazon.awscdk.services.ec2.SubnetType;
-import software.amazon.awscdk.services.glue.CfnConnection;
 import software.amazon.awscdk.services.glue.CfnJob;
 import software.amazon.awscdk.services.iam.Effect;
 import software.amazon.awscdk.services.iam.PolicyStatement;
 import software.amazon.awscdk.services.iam.ServicePrincipal;
 import software.amazon.awscdk.services.iam.Role;
-import software.amazon.awscdk.services.rds.IDatabaseInstance;
 import software.amazon.awscdk.services.s3.IBucket;
 
 /**
@@ -35,55 +28,29 @@ public class ETLGlueJobStack extends Stack {
     private static final String GLUE_DATABASE_NAME = "datalake_csv";
     /** Default catalog table for SIH. Crawler on path raw/sih/ creates a table named "sih" (last path segment). */
     private static final String DEFAULT_SIH_CATALOG_TABLE = "sih";
-    /** RDS output table name. */
+    /** RDS/output table name. */
     private static final String OUTPUT_TABLE_ST_SIH = "st_sih";
+
+    /** External PostgreSQL database configuration. */
+    private static final String EXTERNAL_DB_HOST = "31.97.29.233";
+    private static final String EXTERNAL_DB_NAME = "analytics_datasus";
+    private static final String EXTERNAL_DB_USER = "postgres";
+    private static final String EXTERNAL_DB_PASSWORD = "<alterar_senha>";
+    private static final String EXTERNAL_JDBC_URL = "jdbc:postgresql://" + EXTERNAL_DB_HOST + ":5432/" + EXTERNAL_DB_NAME;
 
     private final IBucket dataLakeBucket;
 
     public ETLGlueJobStack(final Construct scope, final String id, final IBucket dataLakeBucket) {
-        this(scope, id, null, dataLakeBucket, null, null, null, null);
+        this(scope, id, null, dataLakeBucket);
     }
 
     public ETLGlueJobStack(
             final Construct scope,
             final String id,
             final StackProps props,
-            final IBucket dataLakeBucket,
-            final IVpc vpc,
-            final IDatabaseInstance rdsDevInstance,
-            final String rdsDevSecretArn,
-            final ISecurityGroup glueSecurityGroup) {
+            final IBucket dataLakeBucket) {
         super(scope, id, props);
         this.dataLakeBucket = dataLakeBucket;
-
-        if (vpc == null || rdsDevInstance == null || rdsDevSecretArn == null || glueSecurityGroup == null) {
-            return;
-        }
-
-        // Glue NETWORK connection: job runs in VPC (subnet + SG) to reach RDS; script gets JDBC from job params + Secrets Manager
-        String connectionName = "rds-datalake-dev-network";
-        String jdbcUrl = "jdbc:postgresql://" + rdsDevInstance.getDbInstanceEndpointAddress() + ":"
-                + rdsDevInstance.getDbInstanceEndpointPort() + "/datalake";
-        // Use PUBLIC subnets (no NAT cost); Glue has internet and can reach RDS in public subnet
-        var selectedSubnets = vpc.selectSubnets(SubnetSelection.builder()
-                .subnetType(SubnetType.PUBLIC)
-                .build());
-        List<String> subnetIds = selectedSubnets.getSubnetIds();
-        ISubnet firstSubnet = selectedSubnets.getSubnets().get(0);
-        String availabilityZone = firstSubnet.getAvailabilityZone();
-
-        CfnConnection.Builder.create(this, "GlueRdsDevNetworkConnection")
-                .catalogId(getAccount())
-                .connectionInput(CfnConnection.ConnectionInputProperty.builder()
-                        .connectionType("NETWORK")
-                        .name(connectionName)
-                        .physicalConnectionRequirements(CfnConnection.PhysicalConnectionRequirementsProperty.builder()
-                                .availabilityZone(availabilityZone)
-                                .subnetId(subnetIds.get(0))
-                                .securityGroupIdList(List.of(glueSecurityGroup.getSecurityGroupId()))
-                                .build())
-                        .build())
-                .build();
 
         // IAM role for the Glue job
         Role jobRole = Role.Builder.create(this, "GlueSihJobRole")
@@ -111,14 +78,7 @@ public class ETLGlueJobStack extends Stack {
         jobRole.addToPrincipalPolicy(PolicyStatement.Builder.create()
                 .effect(Effect.ALLOW)
                 .actions(List.of("glue:GetConnection"))
-                .resources(List.of(
-                        catalogArn,
-                        "arn:aws:glue:" + getRegion() + ":" + getAccount() + ":connection/" + connectionName))
-                .build());
-        jobRole.addToPrincipalPolicy(PolicyStatement.Builder.create()
-                .effect(Effect.ALLOW)
-                .actions(List.of("secretsmanager:GetSecretValue"))
-                .resources(List.of(rdsDevSecretArn))
+                .resources(List.of(catalogArn))
                 .build());
         String glueLogArn = "arn:aws:logs:" + getRegion() + ":" + getAccount() + ":log-group:/aws-glue/jobs/*";
         jobRole.addToPrincipalPolicy(PolicyStatement.Builder.create()
@@ -126,24 +86,6 @@ public class ETLGlueJobStack extends Stack {
                 .actions(List.of("logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"))
                 .resources(List.of(glueLogArn))
                 .build());
-        // EC2 describe + ENI actions required by Glue when running in VPC
-        jobRole.addToPrincipalPolicy(PolicyStatement.Builder.create()
-                .effect(Effect.ALLOW)
-                .actions(List.of(
-                        "ec2:DescribeSubnets",
-                        "ec2:DescribeVpcs",
-                        "ec2:DescribeSecurityGroups",
-                        "ec2:DescribeNetworkInterfaces",
-                        "ec2:DescribeVpcEndpoints",
-                        "ec2:DescribeRouteTables",
-                        "ec2:CreateNetworkInterface",
-                        "ec2:DeleteNetworkInterface",
-                        "ec2:CreateTags",
-                        "ec2:DeleteTags",
-                        "ec2:DescribeNetworkInterfaceAttribute"))
-                .resources(List.of("*"))
-                .build());
-
         // Script asset (glue-scripts/sih_to_rds.py)
         Asset scriptAsset = Asset.Builder.create(this, "SihToRdsScript")
                 .path("glue-scripts/sih_to_rds.py")
@@ -165,12 +107,10 @@ public class ETLGlueJobStack extends Stack {
                         "--enable-glue-datacatalog", "",
                         "--catalog_database", GLUE_DATABASE_NAME,
                         "--catalog_table", DEFAULT_SIH_CATALOG_TABLE,
-                        "--jdbc_url", jdbcUrl,
-                        "--secret_arn", rdsDevSecretArn,
+                        "--jdbc_url", EXTERNAL_JDBC_URL,
+                        "--db_user", EXTERNAL_DB_USER,
+                        "--db_password", EXTERNAL_DB_PASSWORD,
                         "--output_table", OUTPUT_TABLE_ST_SIH))
-                .connections(CfnJob.ConnectionsListProperty.builder()
-                        .connections(List.of(connectionName))
-                        .build())
                 .glueVersion("4.0")
                 .workerType("G.1X")
                 .numberOfWorkers(2)
@@ -196,11 +136,9 @@ public class ETLGlueJobStack extends Stack {
                         "--job-bookmark-option", "job-bookmark-disable",
                         "--enable-glue-datacatalog", "",
                         "--catalog_database", GLUE_DATABASE_NAME,
-                        "--jdbc_url", jdbcUrl,
-                        "--secret_arn", rdsDevSecretArn))
-                .connections(CfnJob.ConnectionsListProperty.builder()
-                        .connections(List.of(connectionName))
-                        .build())
+                        "--jdbc_url", EXTERNAL_JDBC_URL,
+                        "--db_user", EXTERNAL_DB_USER,
+                        "--db_password", EXTERNAL_DB_PASSWORD))
                 .glueVersion("4.0")
                 .workerType("G.1X")
                 .numberOfWorkers(2)
@@ -226,11 +164,9 @@ public class ETLGlueJobStack extends Stack {
                         "--job-bookmark-option", "job-bookmark-disable",
                         "--enable-glue-datacatalog", "",
                         "--catalog_database", GLUE_DATABASE_NAME,
-                        "--jdbc_url", jdbcUrl,
-                        "--secret_arn", rdsDevSecretArn))
-                .connections(CfnJob.ConnectionsListProperty.builder()
-                        .connections(List.of(connectionName))
-                        .build())
+                        "--jdbc_url", EXTERNAL_JDBC_URL,
+                        "--db_user", EXTERNAL_DB_USER,
+                        "--db_password", EXTERNAL_DB_PASSWORD))
                 .glueVersion("4.0")
                 .workerType("G.1X")
                 .numberOfWorkers(2)

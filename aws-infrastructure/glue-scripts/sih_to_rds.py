@@ -27,9 +27,7 @@ FAT_SIH_FOREIGN_KEYS = [
     ("financ", "dim_financ", "cod"),
     ("raca_cor", "dim_raca_cor", "cod"),
 ]
-import json
 import sys
-import boto3
 from awsglue.utils import getResolvedOptions
 from awsglue.context import GlueContext
 from awsglue.job import Job
@@ -44,14 +42,16 @@ args = getResolvedOptions(
         "catalog_database",
         "catalog_table",
         "jdbc_url",
-        "secret_arn",
+        "db_user",
+        "db_password",
         "output_table",
     ],
 )
 catalog_database = args["catalog_database"]
 catalog_table = args["catalog_table"]
 jdbc_url = args["jdbc_url"]
-secret_arn = args["secret_arn"]
+user = args["db_user"]
+password = args["db_password"]
 output_table = args["output_table"]
 
 sc = SparkContext()
@@ -85,15 +85,6 @@ def ensure_jdbc_safe(dataframe):
     return dataframe.select(cols)
 
 df = ensure_jdbc_safe(df)
-
-# Get username and password from Secrets Manager (job role must have secretsmanager:GetSecretValue)
-client = boto3.client("secretsmanager")
-secret = client.get_secret_value(SecretId=secret_arn)
-secret_dict = json.loads(secret["SecretString"])
-user = secret_dict.get("username")
-password = secret_dict.get("password")
-if not user or not password:
-    raise ValueError("Secret missing username or password")
 
 # Drop output table if it exists (then we will create it on write)
 try:

@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] - 2026-03-13
+
+### Feature
+
+- **Glue ETL – external database:** Glue jobs now use an external PostgreSQL instance (configurable host, database, user, and password). `ETLGlueJobStack` no longer depends on VPC/RDS; JDBC URL and credentials are passed via job arguments (`--jdbc_url`, `--db_user`, `--db_password`). Python scripts (`sih_to_rds.py`, `dimensions_to_rds.py`, `dimensions_aux_to_rds.py`) read these arguments instead of Secrets Manager.
+- **Python logging (Grafana/Loki):** Central logging configuration in `config/logging_config.py` with logfmt format (ts, level, logger, msg) for Grafana/Loki. `LOG_FILE` and `LOG_LEVEL` in EnvLoader; output to file and stdout. `main.py` uses the logger instead of `print`.
+- **S3 – AccessDenied handled:** In `AWSIntegration.list_s3_bucket`, `AccessDenied` on ListObjectsV2 is now handled by returning an empty list and logging a warning, so the pipeline continues when the bucket cannot be listed.
+- **DatalakeInfrastructureStack – configuration:** Bucket name configurable via context `datalake.bucketName` (default `braulioti-datalake-bucket`). Optional bucket policy for local development via context `datalake.localDevPrincipalArn` (user or role with ListBucket, GetObject, PutObject, AbortMultipartUpload, ListMultipartUploadParts). Context keys documented in `cdk.json`.
+- **Local CSV copy (/data):** Pipeline now copies CSVs (dimensions and converted SIH) to a local folder with the same structure as S3 but without the `raw/` prefix. `DATA_PATH` variable (default `/data`); subfolders `sih/`, `sigtap/`, `cid10/`, `nacional/`, `ibge-municipios/`, `ibge-uf/`. Relative path resolution against the script directory (`_resolve_path`) so it works with any CWD (local or Docker).
+- **Docker – logs and data:** App logs sent to stdout (handler to `sys.stdout`) so they appear in `docker logs`. `LOG_FILE` optional (empty = console only). Volumes for logs (`./logs:/app/logs`) and local data (`./data:/data`); `DATA_PATH` and `LOG_FILE` set in `docker-compose`. `data` folder added to `.gitignore`.
+
+### Bugfix
+
+### Documentation
+
+
 ## [1.0.0] - 2026-03-13
 
 **AWS Modern Datalake** is a modern data lake architecture on AWS. It uses S3, Glue ETL, Athena, and BI tooling with raw, trusted, and refined layers. The Python module supports ingesting public health data from DATASUS (e.g. SIH — Hospital Information System) via FTP, configurable via environment variables.

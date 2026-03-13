@@ -27,6 +27,9 @@ _DEFAULTS = {
     "END_MONTH": "10",
     "STATES": "SP,RJ,MG",
     "AWS_S3_BUCKET": "datalake-bucket",
+    "DATA_PATH": "../data",
+    "LOG_FILE": "../logs/app.log",
+    "LOG_LEVEL": "INFO",
 }
 
 
@@ -170,3 +173,18 @@ class EnvLoader:
     def aws_s3_bucket(self) -> str:
         """Return the AWS S3 bucket name for the data lake."""
         return self._get("AWS_S3_BUCKET")
+
+    @property
+    def log_file(self) -> str:
+        """Return the log file path for application logs."""
+        return self._get("LOG_FILE")
+
+    @property
+    def log_level(self) -> str:
+        """Return the log level name (e.g. DEBUG, INFO, WARNING)."""
+        return self._get("LOG_LEVEL")
+
+    @property
+    def data_path(self) -> str:
+        """Local folder for CSV output; same structure as S3 but without the raw/ prefix (e.g. /data/sih, /data/sigtap)."""
+        return self._get("DATA_PATH")

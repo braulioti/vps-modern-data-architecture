@@ -1,14 +1,23 @@
 services:
   app:
     build: .
-    image: aws-modern-datalake:latest
-    container_name: aws-modern-datalake-app
+    image: 977519392584.dkr.ecr.us-east-1.amazonaws.com/sih-sus-repo:latest
+    container_name: sih-sus-data-pipeline
     environment:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_DEFAULT_REGION: us-east-1
+
+      LOG_FILE: "/app/logs/app.log"
+      LOG_LEVEL: "INFO"
+      DATA_PATH: "/data"
       START_YEAR: "2025"
       START_MONTH: "10"
-      END_YEAR: "2025"
-      END_MONTH: "11"
-      STATES: "MG"
+      END_YEAR: "2026"
+      END_MONTH: "01"
+      STATES: "MG,SP,RJ,BA,RS,SC"
     volumes:
       - ./tmp:/app/python/tmp
+      - ./logs:/app/logs
+      - ./data:/app/python/data
     restart: "no"

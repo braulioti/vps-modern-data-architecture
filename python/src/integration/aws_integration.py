@@ -8,6 +8,8 @@ from typing import BinaryIO
 
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
+import logging
 
 
 class AWSIntegration:
@@ -61,14 +63,28 @@ class AWSIntegration:
         Returns:
             List of object keys (strings) that exist in the bucket under the given prefix.
         """
+        logger = logging.getLogger(__name__)
         s3 = self.s3_client()
         keys: list[str] = []
         paginator = s3.get_paginator("list_objects_v2")
-        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-            for obj in page.get("Contents", []):
-                key = obj.get("Key")
-                if key:
-                    keys.append(key)
+        try:
+            for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+                for obj in page.get("Contents", []):
+                    key = obj.get("Key")
+                    if key:
+                        keys.append(key)
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code")
+            if error_code == "AccessDenied":
+                logger.warning(
+                    "s3_list_access_denied bucket=%s prefix=%s error=%s",
+                    bucket,
+                    prefix,
+                    error_code,
+                )
+                # For this pipeline, treat AccessDenied as "no existing files to ignore".
+                return []
+            raise
         return keys
 
     def send_to_s3_bucket(

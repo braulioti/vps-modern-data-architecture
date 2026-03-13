@@ -1,11 +1,9 @@
 """
 Glue ETL job: read dimension data from Glue Data Catalog (crawler output), then load into RDS.
 Only creates the tables and loads data if they do not exist. Adds the specified primary keys.
-Uses --jdbc_url and --secret_arn job parameters.
+Uses --jdbc_url, --db_user and --db_password job parameters.
 """
-import json
 import sys
-import boto3
 from awsglue.utils import getResolvedOptions
 from awsglue.context import GlueContext
 from awsglue.job import Job
@@ -20,28 +18,20 @@ args = getResolvedOptions(
         "JOB_NAME",
         "catalog_database",
         "jdbc_url",
-        "secret_arn",
+        "db_user",
+        "db_password",
     ],
 )
 catalog_database = args["catalog_database"]
 jdbc_url = args["jdbc_url"]
-secret_arn = args["secret_arn"]
+user = args["db_user"]
+password = args["db_password"]
 
 sc = SparkContext()
 glueContext = GlueContext(sc)
 spark = glueContext.spark_session
 job = Job(glueContext)
 job.init(args["JOB_NAME"], args)
-
-# 1) Get username and password from Secrets Manager
-client = boto3.client("secretsmanager")
-secret = client.get_secret_value(SecretId=secret_arn)
-secret_dict = json.loads(secret["SecretString"])
-user = secret_dict.get("username")
-password = secret_dict.get("password")
-
-if not user or not password:
-    raise ValueError("Secret missing username or password")
 
 # Cast struct/array/map columns to string so JDBC write does not fail
 def ensure_jdbc_safe(dataframe):

@@ -21,17 +21,25 @@ import software.amazon.awscdk.services.ecs.ContainerImage;
 import software.amazon.awscdk.services.ecs.FargateTaskDefinition;
 import software.amazon.awscdk.services.ecs.AwsLogDriverProps;
 import software.amazon.awscdk.services.ecs.LogDriver;
+import software.amazon.awscdk.services.iam.ArnPrincipal;
+import software.amazon.awscdk.services.iam.Effect;
+import software.amazon.awscdk.services.iam.PolicyStatement;
 import software.amazon.awscdk.services.iam.Role;
 import software.amazon.awscdk.services.logs.LogGroup;
 import software.amazon.awscdk.services.s3.Bucket;
 
 public class DatalakeInfrastructureStack extends Stack {
 
+    /** CDK context key for bucket name (default: braulioti-datalake-bucket). */
+    public static final String CONTEXT_BUCKET_NAME = "datalake.bucketName";
+    /** CDK context key for IAM principal ARN (user/role) allowed to read/write bucket for local dev. Optional. */
+    public static final String CONTEXT_LOCAL_DEV_PRINCIPAL_ARN = "datalake.localDevPrincipalArn";
+
     private final Vpc vpc;
     private final Bucket bucket;
 
     private static final String VPC_NAME = "datalake-vpc";
-    private static final String BUCKET_NAME = "braulioti-datalake-bucket";
+    private static final String DEFAULT_BUCKET_NAME = "braulioti-datalake-bucket";
     private static final String CLUSTER_NAME = "datalake-cluster";
     private static final String TASK_DEFINITION_FAMILY = "sih-sus-task";
 
@@ -82,9 +90,30 @@ public class DatalakeInfrastructureStack extends Stack {
                 .subnets(SubnetSelection.builder().subnetType(SubnetType.PUBLIC).build())
                 .build());
 
+        String bucketName = getContextOrDefault(CONTEXT_BUCKET_NAME, DEFAULT_BUCKET_NAME);
         this.bucket = Bucket.Builder.create(this, "DatalakeBucketSih")
-                .bucketName(BUCKET_NAME)
+                .bucketName(bucketName)
                 .build();
+
+        String localDevPrincipalArn = getContextOrDefault(CONTEXT_LOCAL_DEV_PRINCIPAL_ARN, "");
+        if (localDevPrincipalArn != null && !localDevPrincipalArn.isBlank()) {
+            bucket.addToResourcePolicy(PolicyStatement.Builder.create()
+                    .effect(Effect.ALLOW)
+                    .principals(List.of(new ArnPrincipal(localDevPrincipalArn)))
+                    .actions(List.of("s3:ListBucket"))
+                    .resources(List.of(bucket.getBucketArn()))
+                    .build());
+            bucket.addToResourcePolicy(PolicyStatement.Builder.create()
+                    .effect(Effect.ALLOW)
+                    .principals(List.of(new ArnPrincipal(localDevPrincipalArn)))
+                    .actions(List.of(
+                            "s3:GetObject",
+                            "s3:PutObject",
+                            "s3:AbortMultipartUpload",
+                            "s3:ListMultipartUploadParts"))
+                    .resources(List.of(bucket.arnForObjects("*")))
+                    .build());
+        }
 
         Role taskRole = Role.Builder.create(this, "SihSusTaskRole")
                 .roleName("sih-sus-task-role")
@@ -127,5 +156,13 @@ public class DatalakeInfrastructureStack extends Stack {
 
     public Bucket getBucket() {
         return bucket;
+    }
+
+    private String getContextOrDefault(String key, String defaultValue) {
+        Object value = getNode().tryGetContext(key);
+        if (value == null || value.toString().isBlank()) {
+            return defaultValue;
+        }
+        return value.toString().trim();
     }
 }
